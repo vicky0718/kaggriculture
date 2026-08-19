@@ -68,6 +68,7 @@ are matched to jobs greedily by coins-per-turn, `value / (1 + distance)`.
 | `tools/diag.py` | per-day execution trace (fed / cared / unharvested / idle land) |
 | `tools/actions.py` | where the crew's turns actually go |
 | `tools/preflight.py` | run before every submission — reproduces Kaggle's load path and Validation Episode |
+| `tools/replay.py` | analyse a downloaded Kaggle replay: identifies which seat is yours, per-day farms, price trajectories |
 | `bot_ref.py` | frozen earlier agent, kept as a regression opponent |
 
 ## Results
@@ -100,3 +101,17 @@ python3 -m venv .venv && .venv/bin/pip install -U kaggle-environments
 standard error, because single-episode results vary by a factor of two — the
 shops that unlock are drawn at random, and which products the town wants
 dominates the score.
+
+## Reading a real ladder game
+
+```bash
+kaggle competitions replay <EPISODE_ID>
+.venv/bin/python tools/replay.py <EPISODE_ID>.json
+```
+
+The seats are not labelled in a replay. `tools/replay.py` fingerprints them:
+this agent only issues `HIRE` in the first two hours of a day, so the seat whose
+hire-hours are `[1, 2]` (recorded one step later than the observation) is ours.
+Check that before drawing any conclusion — the first episode a submission plays
+is the Validation Episode, which is the agent against a copy of itself and
+therefore always a near-tie.
