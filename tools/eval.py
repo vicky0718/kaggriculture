@@ -9,9 +9,16 @@ def _one(job):
     a0, a1, seed, steps = job
     from kaggle_environments import make
     def load(n):
+        """'main' or 'main:WHEAT_CARRY=12,MIN_HANDS=8' (parameter overrides)."""
         if n in ("random", "pass", "starter"):
             return n
-        m = importlib.import_module(n); importlib.reload(m); return m.agent
+        mod, _, spec = n.partition(":")
+        m = importlib.import_module(mod); importlib.reload(m)
+        for kv in filter(None, spec.split(",")):
+            k, _, v = kv.partition("=")
+            cur = getattr(m.P, k)
+            setattr(m.P, k, type(cur)(float(v)) if isinstance(cur, (int, float)) else v)
+        return m.agent
     env = make("kaggriculture", configuration={"episodeSteps": steps, "seed": seed})
     env.run([load(a0), load(a1)])
     last = env.steps[-1]

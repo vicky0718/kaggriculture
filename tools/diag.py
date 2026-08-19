@@ -8,7 +8,11 @@ importlib.reload(main)
 SEED=int(os.environ.get("SEED","1")); POS=int(os.environ.get("POS","0"))
 OPP=os.environ.get("OPP","starter")
 env = make("kaggriculture", configuration={"episodeSteps": 720, "seed": SEED}, debug=True)
-env.run([main.agent, OPP] if POS==0 else [OPP, main.agent])
+def _load(n):
+    if n in ("random","pass","starter"): return n
+    m = importlib.import_module(n); return m.agent
+_o = _load(OPP)
+env.run([main.agent, _o] if POS==0 else [_o, main.agent])
 
 print(f"{'day':>4}{'$':>10}{'anim':>5}{'fed':>4}{'car':>4}{'unhrv':>6}{'plants':>7}"
       f"{'free':>5}{'weed':>5}{'shedN':>6}{'carry':>6}{'wheat':>6}{'hands':>6}")
