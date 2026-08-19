@@ -6,9 +6,15 @@ simulation competition: two farms, one shared market, 720 turns, most coins wins
 `main.py` is the submission — a single self-contained file with no dependencies
 outside the standard library.
 
-```
+```bash
+.venv/bin/python tools/preflight.py          # check it the way Kaggle will
 kaggle competitions submit kaggriculture -f main.py -m "..."
 ```
+
+You submit the *file*; you never run it yourself. Kaggle imports it, takes the
+last callable defined in it (which must be `agent`), and plays it in episodes
+against other bots. A notebook that merely executes the code proves nothing and
+submits nothing.
 
 ## How it decides things
 
@@ -61,6 +67,7 @@ are matched to jobs greedily by coins-per-turn, `value / (1 + distance)`.
 | `tools/sweep.py` | compares variants with paired per-seed statistics |
 | `tools/diag.py` | per-day execution trace (fed / cared / unharvested / idle land) |
 | `tools/actions.py` | where the crew's turns actually go |
+| `tools/preflight.py` | run before every submission — reproduces Kaggle's load path and Validation Episode |
 | `bot_ref.py` | frozen earlier agent, kept as a regression opponent |
 
 ## Results
