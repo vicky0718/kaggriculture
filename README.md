@@ -68,7 +68,9 @@ are matched to jobs greedily by coins-per-turn, `value / (1 + distance)`.
 | `tools/diag.py` | per-day execution trace (fed / cared / unharvested / idle land) |
 | `tools/actions.py` | where the crew's turns actually go |
 | `tools/preflight.py` | run before every submission — reproduces Kaggle's load path and Validation Episode |
-| `tools/replay.py` | analyse a downloaded Kaggle replay: identifies which seat is yours, per-day farms, price trajectories |
+| `tools/replay.py` | reduce a Kaggle replay (~24 MB) to a committable digest (~11 KB) |
+| `tools/harvest.py` | download every new episode, digest it, and write `episodes/INDEX.md` |
+| `episodes/` | the match history, small enough to live in git |
 | `bot_ref.py` | frozen earlier agent, kept as a regression opponent |
 
 ## Results
@@ -102,16 +104,24 @@ standard error, because single-episode results vary by a factor of two — the
 shops that unlock are drawn at random, and which products the town wants
 dominates the score.
 
-## Reading a real ladder game
+## Keeping the match history in git
+
+Raw replays are ~24 MB each, which is why they normally get looked at once and
+thrown away. `tools/harvest.py` downloads each new episode, reduces it to an
+~11 KB digest, and deletes the replay — so the whole season's games can be
+committed and read later:
 
 ```bash
-kaggle competitions replay <EPISODE_ID>
-.venv/bin/python tools/replay.py <EPISODE_ID>.json
+python tools/harvest.py --team "Your Kaggle Team Name"
+git add episodes && git commit -m "episodes" && git push
 ```
 
-The seats are not labelled in a replay. `tools/replay.py` fingerprints them:
-this agent only issues `HIRE` in the first two hours of a day, so the seat whose
-hire-hours are `[1, 2]` (recorded one step later than the observation) is ours.
-Check that before drawing any conclusion — the first episode a submission plays
-is the Validation Episode, which is the agent against a copy of itself and
-therefore always a near-tie.
+A digest keeps per-day farm composition and bank for both players, the full
+price trajectory, where each side's turns went, and the market's end state.
+
+**Seat identity comes from `info.TeamNames` in the replay**, which is why
+`--team` matters. Two traps it avoids: the seats are not otherwise labelled,
+and the first episode a submission plays is the **Validation Episode** — the
+agent against a copy of itself. That one is always a near-tie and says nothing
+about strength; the digest labels its result `self` and leaves it out of the
+win/loss record.
