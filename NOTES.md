@@ -56,3 +56,42 @@ MILK, STRAWBERRY) hit the $1 floor within ~50-150 units.
 - Locked tiles are passable, and `PICKUP`/`DROP`/`PLACE`-into-shed work from a
   locked shed-access tile — which is where hired hands spawn.
 - `actTimeout` is **1 second** per turn.
+
+## What the tuning actually found
+
+Every number below is a paired delta over 28 episodes (14 seeds, both
+seatings) against the built-in `starter` agent, measured with `tools/sweep.py`.
+
+| change | effect |
+| --- | --- |
+| livestock must beat the best crop on a shared capacity metric | **+$39,372 ± 4,932** |
+| raise the marginal-profit bar for buying an animal ($260 → $1,500) | +$28,631 ± 2,527 |
+| smaller minimum crew (the early game has little to do) | +$2,210, worst case $65k → $88k |
+| keep hiring past hour 1 (sell orders share the 10-order budget) | +$593 ± 356 |
+| capping the melon wave at 96 units | **−$13,952 ± 4,602** |
+| stockpiling seed far ahead (ties up cash) | −$8,870 ± 3,476 |
+| making livestock clear an even higher crop bar (2.2×) | −$18,846 ± 6,285 |
+| buying land earlier | neutral — land is not the constraint, turns are |
+
+The single biggest error in early versions was valuing an animal at the spot
+price of its product. A sheep bought at $200/wool depresses the price of every
+unit of wool the farm was already going to sell, so the agent bought 18 sheep
+and 16 cows and finished the season selling wool at $5 and milk at $3. Pricing
+purchases at the *integral* of the price curve — revenue with the animal minus
+revenue without it — is what fixed it.
+
+The second biggest was treating tiles as the scarce resource. They are not:
+seasons routinely end with a third of the farm idle. Farm-hand turns are
+scarce, and about half of them go to walking, so an option that needs 3.4
+actions per tile-day (an animal) has to clear a much higher bar than one that
+needs 1.2 (a crop).
+
+## Still on the table
+
+- Strawberry demand goes unserved almost every game (the town wants ~400 units
+  and pays $250-340 for them). The crop planner ranks it correctly but rarely
+  gets the farm-hand turns to plant and tend a 17-day crop.
+- Roughly 50% of unit-turns are movement and another 12% are shed pickups.
+  Territory-based routing — giving each hand a contiguous patch for the day
+  instead of re-solving the assignment globally every turn — is the obvious
+  next step.

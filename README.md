@@ -61,6 +61,25 @@ are matched to jobs greedily by coins-per-turn, `value / (1 + distance)`.
 | `tools/sweep.py` | compares variants with paired per-seed statistics |
 | `tools/diag.py` | per-day execution trace (fed / cared / unharvested / idle land) |
 | `tools/actions.py` | where the crew's turns actually go |
+| `bot_ref.py` | frozen earlier agent, kept as a regression opponent |
+
+## Results
+
+Against the environment's built-in `starter` agent, 40 paired episodes
+(20 seeds x both seatings):
+
+| | |
+| --- | --- |
+| record | 40W-0L |
+| mean final bank | $117,160 |
+| median / worst | $118,236 / $88,343 |
+| vs `random` | 20W-0L, mean $117,166 |
+| vs the previous committed agent | 18W-6L head to head |
+
+Per-turn latency is 3.8 ms mean, 11.6 ms worst — the competition's `actTimeout`
+is 1 second. The agent also completes cleanly on non-default configurations
+(`boardSize` 4, `turnsPerDay` 12, `shedCapacity` 20, `farmHandCostMult` 40,
+48-step seasons, `marketParams` overrides) and in either seat.
 
 ## Testing
 

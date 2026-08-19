@@ -141,9 +141,12 @@ class P:
     MAX_HANDS = 13
     HIRE_CASH_FRAC = 0.06        # marginal hand allowed while fib(k) <= this * cash
     HIRE_CASH_FLOOR = 34          # ...but always allow cheap hands
+    HIRE_BUDGET_FRAC = 0.25       # cap total daily wages at this share of cash
+    HIRE_UNTIL_HOUR = 3           # keep hiring up to this hour of the day
 
     CASH_RESERVE_BASE = 450       # never invest the farm down to nothing
     CASH_RESERVE_PER_ANIMAL = 22
+    RESERVE_CAP_FRAC = 0.9        # the reserve can never swallow the whole bank
 
     WHEAT_BUY_MAX_PRICE = 70
     WHEAT_RESERVE_DAYS = 1.35
@@ -161,7 +164,6 @@ class P:
     ANIMAL_ACTIONS_PER_DAY = 3.4  # feed + care + harvest/collect amortised
     ANIMAL_BAR = 1.0              # livestock must also beat this x the best crop
     SEED_BATCH = 6                # max seeds of one crop bought per turn
-    MELON_UNIT_CAP = 999          # hard ceiling on melons committed per season
     FERT_ANIMALS = 3              # herd size that counts as a fertilizer supply
     FERT_OPTIMISM = 1             # assume early plantings will get fertilizer
     SEED_LOOKAHEAD = 12           # tiles of planting to keep seed for
@@ -182,7 +184,6 @@ class P:
     MOVE_PENALTY = 1.0            # score = value / (1 + MOVE_PENALTY * distance)
     HERE_BONUS = 1.0              # finish the tile you are standing on
     STICKY = 1.4
-    SHED_TARGET = 55              # keep the shed this empty so drops always fit
 
 
 def _g(obj, key, default=None):
@@ -223,7 +224,6 @@ def _fib(n):
 class Brain:
     def __init__(self):
         self.prev_target = {}
-        self.melon_units_planted = 0
 
     # ------------------------------------------------------------------
     # state
@@ -442,7 +442,10 @@ class Brain:
         return min(self.shed_tiles, key=lambda s: abs(x - s[0]) + abs(y - s[1]))
 
     def _cash_reserve(self):
-        return P.CASH_RESERVE_BASE + P.CASH_RESERVE_PER_ANIMAL * self.n_animals
+        """Cash held back for feed and wages -- but never more than the farm has,
+        or a poor farm reserves its whole bank and never invests at all."""
+        want = P.CASH_RESERVE_BASE + P.CASH_RESERVE_PER_ANIMAL * self.n_animals
+        return min(want, max(0.0, self.money * P.RESERVE_CAP_FRAC))
 
     # ------------------------------------------------------------------
     # investment planning
@@ -554,8 +557,6 @@ class Brain:
         (units, days, acts), use_fert = self._crop_cycle(crop)
         if days > self.days_left - 1:
             return -1.0        # planted tomorrow it would not finish; don't stock it
-        if crop == "MELON" and self.melon_units_planted >= P.MELON_UNIT_CAP:
-            return -1.0
         revenue = self.marginal_revenue(crop, units, committed)
         if crop == "WHEAT" and self.n_animals:
             # Home-grown wheat displaces a purchase at the (rising) buy price,
@@ -693,10 +694,14 @@ class Brain:
         want = max(P.MIN_HANDS, min(P.MAX_HANDS, want))
         if self.endgame:
             want = min(want, 5)
-        allow = max(P.HIRE_CASH_FLOOR, P.HIRE_CASH_FRAC * self.money)
+        marginal = max(P.HIRE_CASH_FLOOR, P.HIRE_CASH_FRAC * self.money)
+        budget = max(2.0, P.HIRE_BUDGET_FRAC * self.money)
+        spent = 0.0
         for k in range(want):
-            if _fib(k) > allow:
+            cost = _fib(k)
+            if cost > marginal or spent + cost > budget:
                 return k
+            spent += cost
         return want
 
     def _plan_market(self):
@@ -726,8 +731,10 @@ class Brain:
         sells.sort(key=lambda s: -s[0])
         orders.extend(o for _, o in sells[:6])
 
-        # 2. Hire early so the crew gets a full shift.
-        if self.hour <= 1 and not self.endgame:
+        # 2. Hire early so the crew gets a full shift. This spans a few turns
+        #    because sell orders share the same 10-order budget, and a single
+        #    turn of hiring cannot reach the target crew size.
+        if self.hour <= P.HIRE_UNTIL_HOUR and not self.endgame:
             todo = max(0, self._target_hands() - self.hires_today)
             orders.extend([["HIRE"]] * min(todo, max(0, 10 - len(orders))))
         if len(orders) >= 10:
@@ -1111,14 +1118,10 @@ class Brain:
 
     def act(self, obs, config):
         self._parse(obs, config)
-        if self.step == 0:
-            self.melon_units_planted = 0
+        if self.step == 0:                    # fresh episode in a reused process
             self.prev_target = {}
         market = self._plan_market()
         unit_actions = self._assign()
-        for a in unit_actions:
-            if a and a[0] == "PLANT" and a[1] == "MELON":
-                self.melon_units_planted += CROPS["MELON"]["max_yield"]
         return {
             "farmer": unit_actions[0] if unit_actions else ["PASS"],
             "hands": unit_actions[1:],
@@ -1129,10 +1132,20 @@ class Brain:
 _BRAIN = Brain()
 
 
+FAILSAFE = {"count": 0, "last": ""}
+
+
 def agent(obs, config=None):
     try:
         return _BRAIN.act(obs, config)
-    except Exception:
+    except Exception as exc:
+        # Never forfeit a turn to an exception, but leave a trace: a silently
+        # passing agent is indistinguishable from a working one in a replay.
+        FAILSAFE["count"] += 1
+        FAILSAFE["last"] = repr(exc)
+        if FAILSAFE["count"] <= 3:
+            import traceback
+            traceback.print_exc()
         n = 0
         try:
             farms = _g(obs, "farms", []) or []
