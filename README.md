@@ -70,6 +70,7 @@ are matched to jobs greedily by coins-per-turn, `value / (1 + distance)`.
 | `tools/preflight.py` | run before every submission — reproduces Kaggle's load path and Validation Episode |
 | `tools/replay.py` | reduce a Kaggle replay (~24 MB) to a committable digest (~11 KB) |
 | `tools/harvest.py` | download every new episode, digest it, and write `episodes/INDEX.md` |
+| `tools/watch.py` | see an episode spatially: per-day farm map with the crew overlaid, and walking vs working |
 | `episodes/` | the match history, small enough to live in git |
 | `bot_ref.py` | frozen earlier agent, kept as a regression opponent |
 
@@ -118,6 +119,15 @@ git add episodes && git commit -m "episodes" && git push
 
 A digest keeps per-day farm composition and bank for both players, the full
 price trajectory, where each side's turns went, and the market's end state.
+
+To see a game rather than tabulate it, `tools/watch.py` prints the farm as a
+map with the crew's standing positions overlaid — the thing you would notice
+watching the replay, which no aggregate shows:
+
+```bash
+python tools/watch.py <replay.json> --team "Your Team" --days 12,22
+python tools/watch.py <replay.json> --html game.html   # the real Kaggle visualizer, offline
+```
 
 **Seat identity comes from `info.TeamNames` in the replay**, which is why
 `--team` matters. Two traps it avoids: the seats are not otherwise labelled,
