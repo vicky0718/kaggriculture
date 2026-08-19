@@ -137,8 +137,8 @@ def animal_rate(animal):
 # --------------------------------------------------------------------------
 
 class P:
-    MIN_HANDS = 7
-    MAX_HANDS = 16
+    MIN_HANDS = 4
+    MAX_HANDS = 13
     HIRE_CASH_FRAC = 0.06        # marginal hand allowed while fib(k) <= this * cash
     HIRE_CASH_FLOOR = 34          # ...but always allow cheap hands
 
@@ -151,6 +151,7 @@ class P:
     WHEAT_CARRY = 15
 
     LAND_RESERVE = 700
+    LAND_FREE_TILES = 9           # buy the next quadrant once free land drops here
     LAND_LAST_DAY = 23
 
     ANIMAL_MIN_PROFIT = 500       # marginal profit needed to buy one more
@@ -160,6 +161,9 @@ class P:
     ANIMAL_ACTIONS_PER_DAY = 3.4  # feed + care + harvest/collect amortised
     ANIMAL_BAR = 1.0              # livestock must also beat this x the best crop
     SEED_BATCH = 6                # max seeds of one crop bought per turn
+    MELON_UNIT_CAP = 999          # hard ceiling on melons committed per season
+    FERT_ANIMALS = 3              # herd size that counts as a fertilizer supply
+    FERT_OPTIMISM = 1             # assume early plantings will get fertilizer
     SEED_LOOKAHEAD = 12           # tiles of planting to keep seed for
 
     OPP_DISCOUNT = 0.7            # assume the opponent realises 70% of its pipeline
@@ -532,8 +536,13 @@ class Brain:
         return free_tiles - used > 0
 
     def _crop_cycle(self, crop):
-        use_fert = (self.shed.get("FERTILIZER", 0) + self.carried.get("FERTILIZER", 0) > 2
-                    or self.n_animals >= 3) and self.proj_price("FERTILIZER") < 78
+        stock = self.shed.get("FERTILIZER", 0) + self.carried.get("FERTILIZER", 0)
+        # Animals make a fertilizer a day each, so a long crop planted now will
+        # have plenty by the time its bonus window opens.
+        future = self.n_animals + sum(self.pending_animals.values())
+        have = stock > 2 or future >= P.FERT_ANIMALS or (
+            P.FERT_OPTIMISM and self.day <= 6 and self.money > 900)
+        use_fert = have and self.proj_price("FERTILIZER") < 78
         return CROP_CYCLE[crop]["fert" if use_fert else "plain"], use_fert
 
     def _crop_score(self, crop, committed=0.0):
@@ -545,6 +554,8 @@ class Brain:
         (units, days, acts), use_fert = self._crop_cycle(crop)
         if days > self.days_left - 1:
             return -1.0        # planted tomorrow it would not finish; don't stock it
+        if crop == "MELON" and self.melon_units_planted >= P.MELON_UNIT_CAP:
+            return -1.0
         revenue = self.marginal_revenue(crop, units, committed)
         if crop == "WHEAT" and self.n_animals:
             # Home-grown wheat displaces a purchase at the (rising) buy price,
@@ -756,7 +767,7 @@ class Brain:
         # we are actually running out of room.
         extra = len(self.quadrants) - 1
         if (extra < len(LAND_PRICES) and self.day <= P.LAND_LAST_DAY
-                and self.days_left >= 5 and len(self.empty_tiles) <= 9):
+                and self.days_left >= 5 and len(self.empty_tiles) <= P.LAND_FREE_TILES):
             cost = LAND_PRICES[extra]
             if spare >= cost + P.LAND_RESERVE:
                 buys.append(["BUY_LAND"])
