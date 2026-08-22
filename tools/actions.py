@@ -1,7 +1,7 @@
 """Count what the crew actually spends its turns on."""
 import sys, os, collections
-sys.path.insert(0, "/home/user/kaggriculture/.venv/lib/python3.11/site-packages")
-sys.path.insert(0, "/home/user/kaggriculture")
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
 from kaggle_environments import make
 import importlib, main
 importlib.reload(main)

@@ -8,15 +8,16 @@ Reproduces exactly what the competition does to your file:
   3. checks per-turn latency against the 1 second actTimeout;
   4. confirms the file only imports the standard library.
 
-Usage:  .venv/bin/python tools/preflight.py [path/to/main.py]
+Usage:  .venv/Scripts/python tools/preflight.py   (POSIX: .venv/bin/python) [path/to/main.py]
 """
 import ast
 import os
 import sys
 import time
 
-HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(HERE, ".venv/lib/python3.11/site-packages"))
+HERE = os.path.dirname(os.path.abspath(__file__))
+if os.path.basename(HERE) == "tools":      # works from repo root or tools/
+    HERE = os.path.dirname(HERE)
 
 from kaggle_environments import make
 from kaggle_environments.agent import get_last_callable

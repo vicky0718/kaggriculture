@@ -1,6 +1,5 @@
 """Numeric analysis of Kaggriculture market absorption + per-action / per-tile-day yields."""
 import sys, math
-sys.path.insert(0, "/home/user/kaggriculture/.venv/lib/python3.11/site-packages")
 from kaggle_environments.envs.kaggriculture.kaggriculture import (
     market_price, MARKET_PARAMS, CROPS, ANIMALS, PRODUCTS, MARKET_I0)
 

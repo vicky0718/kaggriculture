@@ -1,7 +1,6 @@
 """Scarcity-aware value: the town drains inventory all season, so supplying a
 product earns prices ABOVE base until our own supply catches up with demand."""
 import sys
-sys.path.insert(0, "/home/user/kaggriculture/.venv/lib/python3.11/site-packages")
 from kaggle_environments.envs.kaggriculture.kaggriculture import (
     market_price, MARKET_I0, SHOPS, PRODUCTS, CROPS, ANIMALS)
 

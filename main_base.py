@@ -91,16 +91,6 @@ CROP_CYCLE = {
 }
 
 
-def _free_age(crop):
-    """Age at which a tile of `crop` comes free.
-
-    For ongoing crops this is well past `max_yield_day`: a tomato holds its tile
-    until all four scheduled yields have fired (age 12), not from age 8.  Using
-    max_yield_day here made the seed planner buy 4-7 days ahead of the tiles
-    actually opening up, tying up cash in seed that could not be planted."""
-    return CROP_CYCLE[crop]["plain"][1] - 1
-
-
 def _shape(func, x, T=None):
     x = max(0.0, x)
     if func == "linear":
@@ -153,13 +143,6 @@ class P:
     HIRE_CASH_FLOOR = 34          # ...but always allow cheap hands
     HIRE_BUDGET_FRAC = 0.25       # cap total daily wages at this share of cash
     HIRE_UNTIL_HOUR = 3           # keep hiring up to this hour of the day
-    HIRE_SLOTS = 3                # order slots held back for hiring each turn
-    BUY_SLOTS = 2                 # ...and for seed/livestock orders
-    SELL_CREDIT = 0.8             # share of queued sale proceeds spendable now
-    MAX_ERRANDS = 3               # units allowed to run to the shed at once
-    PLANT_CUTOFF = 2              # no planting in the last N hours of the day
-    LIQUIDATE_HOURS = 4           # final-day turns reserved for getting stock sold
-    SEASON_COMMIT = 1             # price a tile over its whole season, not one cycle
 
     CASH_RESERVE_BASE = 450       # never invest the farm down to nothing
     CASH_RESERVE_PER_ANIMAL = 22
@@ -252,8 +235,6 @@ class Brain:
         episode_steps = int(_g(config, "episodeSteps", 720) or 720)
         self.total_days = max(1, episode_steps // self.turns_per_day)
         self.shed_cap = int(_g(config, "shedCapacity", 100) or 100)
-        self.hand_cost_mult = float(_g(config, "farmHandCostMult", 1) or 1)
-        self.max_orders = int(_g(config, "maxMarketOrdersPerTurn", 10) or 10)
         self.half = self.board // 2
 
         self.player = int(_g(obs, "player", 0) or 0)
@@ -606,15 +587,7 @@ class Brain:
             if best is None:
                 break
             seq.append(best)
-            # A tile is a season-long commitment, not one cycle: an 11-day melon
-            # replants ~2.5 times before the season ends, so charging it for a
-            # single 6-unit crop understates its true supply by that factor.
-            # Undercharging is what let melon claim 24 of 25 tiles and bury
-            # strawberry -- the second most-demanded product on the board -- at
-            # rank 24, outside the seed-buying window entirely.
-            units, days, _ = self._crop_cycle(best)[0]
-            cycles = max(1, int(self.days_left // days)) if P.SEASON_COMMIT else 1
-            committed[best] += units * cycles
+            committed[best] += self._crop_cycle(best)[0][0]
         self._crop_seq_cache = seq
         return seq
 
@@ -643,11 +616,7 @@ class Brain:
             plan.append((free[idx][0], free[idx][1], ["BUILD_COOP"]))
             idx += 1
 
-        # A fresh seed starts on consecutive_unwatered = 1 and the tile is not a
-        # waterable plant until the turn after PLANT, so a seed sown in the last
-        # hours of the day can never be watered in time.
-        seq = [] if self.hour >= self.turns_per_day - P.PLANT_CUTOFF \
-            else list(self._crop_sequence())
+        seq = list(self._crop_sequence())
         counts = {}
         while idx < len(free) and seq:
             crop = seq.pop(0)
@@ -662,7 +631,7 @@ class Brain:
         """Buy exactly the seeds the tile plan is about to ask for."""
         want = {}
         soon = sum(1 for _, _, t in self.plants
-                   if self.day - t["planted_day"] >= _free_age(t["crop"]))
+                   if self.day - t["planted_day"] >= CROPS[t["crop"]]["max_yield_day"])
         limit = min(len(self.empty_tiles) + soon + 2, P.SEED_LOOKAHEAD)
         for crop in self._crop_sequence()[:limit]:
             want[crop] = want.get(crop, 0) + 1
@@ -729,13 +698,14 @@ class Brain:
         budget = max(2.0, P.HIRE_BUDGET_FRAC * self.money)
         spent = 0.0
         for k in range(want):
-            cost = _fib(k) * self.hand_cost_mult
+            cost = _fib(k)
             if cost > marginal or spent + cost > budget:
                 return k
             spent += cost
         return want
 
     def _plan_market(self):
+        orders = []
         dump = self.day >= P.DUMP_FROM_DAY or self.endgame
         pressure = self.shed_used + self.total_carried > self.shed_cap - 12
 
@@ -759,55 +729,28 @@ class Brain:
             if n > 0:
                 sells.append((self.prices.get(item, 0) * n, ["SELL", item, n]))
         sells.sort(key=lambda s: -s[0])
-        sell_orders = [o for _, o in sells[:6]]
+        orders.extend(o for _, o in sells[:6])
 
-        hires = []
+        # 2. Hire early so the crew gets a full shift. This spans a few turns
+        #    because sell orders share the same 10-order budget, and a single
+        #    turn of hiring cannot reach the target crew size.
         if self.hour <= P.HIRE_UNTIL_HOUR and not self.endgame:
             todo = max(0, self._target_hands() - self.hires_today)
-            hires = [["HIRE"]] * todo
+            orders.extend([["HIRE"]] * min(todo, max(0, 10 - len(orders))))
+        if len(orders) >= 10:
+            return orders[:10]
 
-        # Orders run in list order and an order stops when the money runs out,
-        # so the sells queued above genuinely fund the buys below them on the
-        # same turn.  Discounted, because the opponent may be selling into the
-        # same book and each unit we add moves the price against us.
-        buys = self._plan_buys(extra_cash=P.SELL_CREDIT
-                               * self._expected_proceeds(sell_orders))
-
-        # Feed is the one order that must never be crowded out -- a starved
-        # animal is gone for good, and orders past the cap are silently dropped.
-        feed = [o for o in buys if o[0] == "BUY_PRODUCT" and o[1] == "WHEAT"]
-        rest = [o for o in buys if not (o[0] == "BUY_PRODUCT" and o[1] == "WHEAT")]
-
-        # Sells used to take six of the ten slots and hiring the rest, so on a
-        # busy morning the seed and livestock orders were silently dropped for
-        # the whole hiring window.  Hold slots back for them.
-        cap = self.max_orders
-        reserved = (len(feed) + min(len(hires), P.HIRE_SLOTS)
-                    + (P.BUY_SLOTS if rest else 0))
-        orders = list(sell_orders[:max(1, cap - reserved)])
-        orders.extend(feed)
-        orders.extend(hires[:max(0, cap - len(orders))])
-        orders.extend(rest[:max(0, cap - len(orders))])
-        return orders[:cap]
-
-    def _expected_proceeds(self, sell_orders):
-        """What the queued sells will actually raise -- the integral of the
-        price curve over the units sold, not quantity x spot price."""
-        total = 0.0
-        for o in sell_orders:
-            if o[0] == "SELL":
-                total += self._revenue(o[1], self.minv.get(o[1], MARKET_I0), o[2])
-        return total
+        orders.extend(self._plan_buys()[:10 - len(orders)])
+        return orders[:10]
 
     def _hire_cost_today(self):
         want = self._target_hands()
-        return sum(_fib(k) * self.hand_cost_mult
-                   for k in range(self.hires_today, max(self.hires_today, want)))
+        return sum(_fib(k) for k in range(self.hires_today, max(self.hires_today, want)))
 
-    def _plan_buys(self, extra_cash=0.0):
+    def _plan_buys(self):
         buys = []
         reserve = self._cash_reserve() + self._hire_cost_today()
-        cash = self.money + max(0.0, extra_cash)
+        cash = self.money
 
         # Feed comes first: a starved animal is gone for good.
         have = self.shed.get("WHEAT", 0)
@@ -840,7 +783,7 @@ class Brain:
         # Land that no animal is going to occupy has to be planted, so ring-fence
         # a seed budget before the (much larger) livestock orders drain the bank.
         soon = sum(1 for _, _, t in self.plants
-                   if self.day - t["planted_day"] >= _free_age(t["crop"]))
+                   if self.day - t["planted_day"] >= CROPS[t["crop"]]["max_yield_day"])
         idle = max(0, len(self.empty_tiles) + soon - sum(self.pending_animals.values()))
         seed_budget = min(spare * 0.55, idle * 120.0)
 
@@ -869,12 +812,6 @@ class Brain:
         day = self.day
         endgame = self.endgame
         fert_price = pr.get("FERTILIZER", 100)
-        # Market orders happen before worker actions.  On the last day an item
-        # harvested now needs one turn to be dropped and a *later* turn to be
-        # sold, so late harvesting creates inventory that is worth exactly zero
-        # at the final whistle.  Reserve the tail of the day for carriers.
-        can_liquidate = (not endgame
-                         or self.hour < self.turns_per_day - P.LIQUIDATE_HOURS)
 
         for x, y, t in self.animals:
             a = ANIMALS[t["animal"]]
@@ -882,13 +819,8 @@ class Brain:
             rate = animal_rate(t["animal"])
             units = t.get("yield_units", 0)
 
-            if t.get("fertilizer_available") and can_liquidate:
+            if t.get("fertilizer_available"):
                 add((float(fert_price), x, y, ["COLLECT_FERTILIZER"], None))
-
-            # Tonight's end-of-day refresh produces if this is a scheduled tick.
-            _since = (day + 1) - t.get("placed_day", day) - a["first_yield_day"]
-            produces_tonight = _since >= 0 and _since % a["interval"] == 0
-            banked = t.get("pending_care_bonus", 0)
 
             if not t.get("fed_today"):
                 if endgame:
@@ -898,36 +830,22 @@ class Brain:
                 else:
                     # Feeding is what makes CARE pay and keeps production going.
                     value = rate * price * 0.9 + 40
-                    # On a production night an unfed animal still drops its base
-                    # unit, but the banked CARE bonus is zeroed unspent -- three
-                    # nights of tending a sheep thrown away for one wheat.
-                    if produces_tonight and banked:
-                        value = max(value, banked * price + 40)
                 add((value, x, y, ["FEED"], "WHEAT"))
-
-            # The next scheduled tick pays out 1 + the banked CARE bonus, which
-            # the observation reports exactly.  A sheep's tick can be 4 units
-            # where ceil(rate) is only 2, so guessing here overflows max_held
-            # and the surplus is destroyed.
-            next_tick = 1 + banked
 
             if (not t.get("cared_today") and not endgame and self.days_left >= 1
                     and (t.get("fed_today") or self._wheat_covers_herd)):
-                # CARE today adds one more unit to that tick, so price the tick
-                # it would actually produce.
-                if units + next_tick + 1 <= a["max_held"]:
+                if units + math.ceil(rate) <= a["max_held"]:
                     add((price * 1.0, x, y, ["CARE"], None))
 
             if units > 0:
-                overflow = units + next_tick > a["max_held"]
+                overflow = units + math.ceil(rate) > a["max_held"]
                 value = units * price
                 if overflow or endgame:
                     value += 2.0 * price
                 if endgame:
                     value *= 2.0        # unsold stock scores nothing
-                if endgame:
-                    if units >= 1 and can_liquidate:
-                        add((value, x, y, ["HARVEST"], None))
+                if units >= 1 and endgame:
+                    add((value, x, y, ["HARVEST"], None))
                 elif units >= 2 or overflow or self.hour >= 17:
                     add((value, x, y, ["HARVEST"], None))
 
@@ -967,7 +885,7 @@ class Brain:
                     remaining = max(units, cd["max_yield"] - 2)
                     add((remaining * price * 0.6 + 25, x, y, ["WATER"], None))
 
-            if ready and can_liquidate:
+            if ready:
                 add((units * price + 15, x, y, ["HARVEST"], None))
 
             if (self.days_left >= 2 and not endgame
@@ -1044,7 +962,6 @@ class Brain:
             return actions
 
         pairs = []
-        self._errand_value = {}
         for u in range(n_units):
             ux, uy = self.positions[u]
             inv = self.invs[u]
@@ -1067,18 +984,11 @@ class Brain:
         used_units, used_tasks = set(), set()
         plant_budget = dict(self.seeds)
         new_targets = {}
-        errands = 0
 
         for score, u, ti in pairs:
             if u in used_units:
                 continue
             if ti == -1:
-                # Nothing reserves shed stock, so an uncapped errand sends the
-                # whole crew to the shed at once, where they each try to pick up
-                # the same wheat and the same animals.  Urgent runs are exempt.
-                if errands >= P.MAX_ERRANDS and self._errand_value.get(u, 0.0) < 700.0:
-                    continue
-                errands += 1
                 sx, sy = self._nearest_shed_tile(*self.positions[u])
                 actions[u] = self._shed_action(u, sx, sy)
                 used_units.add(u)
@@ -1131,10 +1041,6 @@ class Brain:
             if self.shed_used >= self.shed_cap - 4:
                 urgency = 0.15                  # no room; keep working instead
             value = max(value, self._carry_value(inv) * 0.45 * urgency)
-        elif produce and self.endgame:
-            # A single premium unit still has to be in the shed before the
-            # final market tick.  The normal batch threshold is too high here.
-            value = max(value, self._carry_value(inv) * 3.0)
 
         unfed = [t for _, _, t in self.animals if not t.get("fed_today")]
         stock = self.shed.get("WHEAT", 0)
@@ -1161,7 +1067,6 @@ class Brain:
 
         if value <= 0:
             return None
-        self._errand_value[u] = value
         return (value / (1.0 + dist), u, -1)
 
     def _shed_action(self, u, sx, sy):
