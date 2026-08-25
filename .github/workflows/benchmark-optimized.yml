@@ -1,0 +1,20 @@
+name: Kaggriculture benchmark
+
+on:
+  push:
+    branches: [optimize-agent-20260825]
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install environment
+        run: pip install kaggle-environments
+      - name: Benchmark
+        run: |
+          python tools/eval.py main main_optimized -n 8 -w 2
+          python tools/sweep.py main main_optimized --opp starter -n 8 -w 2
