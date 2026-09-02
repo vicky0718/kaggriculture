@@ -62,6 +62,19 @@ if __name__ == "__main__":
         for seed, sw, m, th, st in sorted(res):
             print(f"  seed {seed}{' (swap)' if sw else '      '}: {m:>10,.0f} vs {th:>10,.0f}"
                   + ("  " + str(st) if any(s != "DONE" for s in st) else ""))
+    # Win rate is what the ladder scores, and it needs a confidence interval:
+    # a 14-10 result over 24 games is indistinguishable from a coin flip, which
+    # is exactly how a noise result gets mistaken for an improvement.
+    import math as _m
+    n = len(res); p = w / n if n else 0.0
+    se = _m.sqrt(max(p * (1 - p), 1e-9) / max(n, 1))
+    verdict = ("BETTER" if p - 2 * se > 0.5 else
+               "WORSE" if p + 2 * se < 0.5 else "INCONCLUSIVE")
+    msg = f"  win rate {100*p:.0f}% +/-{200*se:.0f}%  over {n} games -> {verdict}"
+    if verdict == "INCONCLUSIVE":
+        need = int(1.0 / max(1e-4, (p - 0.5) ** 2)) if abs(p - 0.5) > 0.01 else 10000
+        msg += f"   (~{need} games needed to call an effect this small)"
+    print(msg)
     print(f"{a0} vs {a1}: {w}W-{l}L-{t}T  |  mean ${statistics.mean(mine):,.0f} "
           f"(median ${statistics.median(mine):,.0f}, min ${min(mine):,.0f}, max ${max(mine):,.0f})"
           f"  vs ${statistics.mean(theirs):,.0f}   [{time.time()-t0:.0f}s]")
