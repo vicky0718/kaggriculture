@@ -95,3 +95,32 @@ needs 1.2 (a crop).
   Territory-based routing — giving each hand a contiguous patch for the day
   instead of re-solving the assignment globally every turn — is the obvious
   next step.
+
+## Two hypotheses from watching real games
+
+Both came from the user watching ladder episodes. One held up, one did not —
+and the one that did not is the more instructive.
+
+**"All the yields weren't collected and sold."** Correct, and it had a single
+cause. `tools/leftovers.py` measures value stranded at the whistle, split three
+ways: still on the plant or animal, still in the shed, still in a worker's
+pockets. It was $1,324 a game, essentially all of it *shed wheat* — one unit per
+animal, held by a feed reserve that never stood down. Feeding on the last day
+produces at the end-of-day refresh, which cannot then be harvested, dropped and
+sold. Zeroing the reserve on the final day took stranded value to $77 and won
+**22-8 (73% ± 16%)** head to head against the version without it.
+
+**"We need more workers initially."** Does not hold. `MIN_HANDS=12` raises our
+own final bank (+$2,374) and loses anyway — 3/24 against a mirror, 9/20 against
+a different agent, down from 19/20. The reason is visible in the totals: our
+bank rises to $69k but the opponent's rises to $84k, and the *combined* take
+goes from $133k to $153k. Hiring early shifts our production out of contention
+with theirs, so both sides extract more from the town — and they extract more of
+it than we do. Early wages also come out of the capital that should buy land and
+seed, and the opening days are already 39-53% PASS.
+
+The general lesson, which cost two rejected changes to learn: **mean final bank
+is a misleading objective.** Territory routing and a bigger early crew both
+raised our own money while losing more games. Only the win rate counts, and
+`tools/eval.py` now prints it with a confidence interval and refuses to call
+anything on 24 games that a coin flip could produce.
