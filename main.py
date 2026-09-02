@@ -682,8 +682,13 @@ class Brain:
     # ------------------------------------------------------------------
 
     def _wheat_need_total(self):
-        """Wheat the farm should own, in the shed and in pockets together."""
-        if self.days_left < 0 or not self.n_animals:
+        """Wheat the farm should own, in the shed and in pockets together.
+
+        Zero on the final day: feeding then produces at the end-of-day refresh,
+        which can no longer be harvested, dropped and sold before the whistle.
+        Holding the reserve anyway left ~\$1,500 of unsellable wheat in the shed
+        every game -- more than the margin of a close loss."""
+        if self.days_left <= 0 or not self.n_animals:
             return 0
         return int(min(self.n_animals * P.WHEAT_RESERVE_DAYS + 8,
                        P.WHEAT_RESERVE_CAP,
