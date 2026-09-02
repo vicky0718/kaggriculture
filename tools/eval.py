@@ -1,8 +1,8 @@
 """Parallel multi-seed evaluation."""
 import sys, os, time, argparse, importlib, statistics
 from concurrent.futures import ProcessPoolExecutor
-import os as _os, sys as _sys
-_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+sys.path.insert(0, "/home/user/kaggriculture/.venv/lib/python3.11/site-packages")
+sys.path.insert(0, "/home/user/kaggriculture")
 
 
 def _one(job):
@@ -44,25 +44,16 @@ def evaluate(a0, a1, seeds, steps=720, workers=8, swap=True):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("agents", nargs="*", default=["main", "starter"])
-    ap.add_argument("-n", type=int, default=None)
+    ap.add_argument("-n", type=int, default=8)
     ap.add_argument("--seed0", type=int, default=1)
-    ap.add_argument("--seeds", metavar="FILE", default=None,
-                    help="file of seeds, one per line (e.g. ladder/seeds.txt -- the "
-                         "seeds of real ladder episodes). Overrides -n/--seed0.")
     ap.add_argument("-w", "--workers", type=int, default=8)
     ap.add_argument("--noswap", action="store_true")
     ap.add_argument("-q", "--quiet", action="store_true")
     a = ap.parse_args()
     a0, a1 = (a.agents + ["main", "starter"])[:2]
     t0 = time.time()
-    if a.seeds:
-        seeds = [int(x) for x in open(a.seeds)
-                 if x.strip() and not x.lstrip().startswith("#")]
-        if a.n:
-            seeds = seeds[:a.n]          # --seeds with no -n uses every seed
-    else:
-        seeds = list(range(a.seed0, a.seed0 + (a.n or 8)))
-    res = evaluate(a0, a1, seeds, workers=a.workers, swap=not a.noswap)
+    res = evaluate(a0, a1, list(range(a.seed0, a.seed0 + a.n)), workers=a.workers,
+                   swap=not a.noswap)
     mine = [r[2] for r in res]; theirs = [r[3] for r in res]
     w = sum(1 for r in res if r[2] > r[3]); l = sum(1 for r in res if r[2] < r[3])
     t = len(res) - w - l
@@ -71,13 +62,21 @@ if __name__ == "__main__":
         for seed, sw, m, th, st in sorted(res):
             print(f"  seed {seed}{' (swap)' if sw else '      '}: {m:>10,.0f} vs {th:>10,.0f}"
                   + ("  " + str(st) if any(s != "DONE" for s in st) else ""))
-    q = sorted(mine)
-    def pct(p):
-        return q[min(len(q) - 1, int(p * len(q)))]
-    print(f"{a0} vs {a1}: {w}W-{l}L-{t}T ({100.0*w/max(1,len(res)):.0f}% win)  "
-          f"vs opp mean ${statistics.mean(theirs):,.0f}   [{time.time()-t0:.0f}s]")
-    print(f"  own bank  p10 ${pct(.10):>9,.0f}   p25 ${pct(.25):>9,.0f}   median ${statistics.median(mine):>9,.0f}"
-          f"   p75 ${pct(.75):>9,.0f}   mean ${statistics.mean(mine):>9,.0f}")
-    print(f"  -- the ladder is lost in the bad games: p10/p25 move the win rate, the mean does not.")
+    # Win rate is what the ladder scores, and it needs a confidence interval:
+    # a 14-10 result over 24 games is indistinguishable from a coin flip, which
+    # is exactly how a noise result gets mistaken for an improvement.
+    import math as _m
+    n = len(res); p = w / n if n else 0.0
+    se = _m.sqrt(max(p * (1 - p), 1e-9) / max(n, 1))
+    verdict = ("BETTER" if p - 2 * se > 0.5 else
+               "WORSE" if p + 2 * se < 0.5 else "INCONCLUSIVE")
+    msg = f"  win rate {100*p:.0f}% +/-{200*se:.0f}%  over {n} games -> {verdict}"
+    if verdict == "INCONCLUSIVE":
+        need = int(1.0 / max(1e-4, (p - 0.5) ** 2)) if abs(p - 0.5) > 0.01 else 10000
+        msg += f"   (~{need} games needed to call an effect this small)"
+    print(msg)
+    print(f"{a0} vs {a1}: {w}W-{l}L-{t}T  |  mean ${statistics.mean(mine):,.0f} "
+          f"(median ${statistics.median(mine):,.0f}, min ${min(mine):,.0f}, max ${max(mine):,.0f})"
+          f"  vs ${statistics.mean(theirs):,.0f}   [{time.time()-t0:.0f}s]")
     if bad:
         print(f"  !! {len(bad)} episodes with non-DONE status")
