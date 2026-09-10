@@ -167,3 +167,25 @@ and over-weighting them are worse than the current 0.7 discount.
 
 The agent is at a genuine local optimum on every dial that exists. Further gains
 need a different architecture, not a better setting.
+
+## Scouting the public notebooks
+
+Nothing substantive is readable from a sandbox: every Kaggle notebook, dataset
+and discussion page is a JavaScript shell to an unauthenticated fetcher, and the
+API returns 401 without a token. Five public Kaggriculture notebooks exist by
+title — *Getting Started* (bovard), *Adaptive Replay Agent* and *Adaptive Farm
+Intelligence* (flexonafft), *Observable Economic Control* (pilkwang), and
+*Kaggriculture 101* — but their contents need a session to read. No competitor
+agent code is on GitHub either, which is what you would expect mid-competition.
+
+The one find that matters is a public dataset, **`georgymamarin/kaggriculture-episodes`**:
+full replays from across the ladder, not just our own games. Community notebooks
+describe mining it by plotting bank curves of top submissions, diffing actions
+between top and mid-ladder agents, and regressing final bank on early choices.
+
+That is worth more than any notebook write-up, because it answers the question
+this project has never been able to answer: *what do the agents rated 3000
+actually do?* Every strategy tested so far was measured against our own variants,
+which can only find our own bugs. `tools/profile_agents.py` reads that dataset
+directly — it groups replays by team, ranks by mean final bank, and reports each
+team's hiring rate, land purchases, peak farm composition and what they sell.
