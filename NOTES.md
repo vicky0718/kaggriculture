@@ -146,6 +146,20 @@ because they are the useful part — they say where the agent is *not* losing.
 | price actions or tile-days higher | −$19k and −$18k |
 | buy land earlier | −$1,802, 12/40 |
 
+### A caveat on the harness (fixed 2026-09-14)
+
+Until `870c088`, `tools/eval.py` loaded both agents with `importlib.reload()`,
+which re-executes a module into its *existing* `__dict__`. Two agents from the
+same file therefore shared one `P` class, and whichever loaded second silently
+overwrote the first one's overrides. Any `main:X vs main` run was really a
+mirror match with `X` discarded.
+
+Sweeps and runs against a separate opponent file (`bot_ref`, `starter`) were
+never affected — a different module is already a different namespace, so the
+table above stands. Same-file A/B runs are the ones to distrust; they are cheap
+to repeat now. A `MIN_HANDS=2` probe that returned 2W-2L under the old loader
+returns 1W-5L under the new one.
+
 ### What the rejections mean
 
 **Walking is not waste.** Three separate attempts to keep hands near their work
