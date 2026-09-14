@@ -71,6 +71,9 @@ are matched to jobs greedily by coins-per-turn, `value / (1 + distance)`.
 | `tools/replay.py` | reduce a Kaggle replay (~24 MB) to a committable digest (~11 KB) |
 | `tools/harvest.py` | download every new episode, digest it, and write `episodes/INDEX.md` |
 | `tools/watch.py` | see an episode spatially: per-day farm map with the crew overlaid, and walking vs working |
+| `tools/audit.py` | per product: town demand, units sold, price realised, revenue unserved |
+| `tools/leftovers.py` | value stranded at the whistle — on the plant, in the shed, in a pocket |
+| `tools/profile_agents.py` | mine a directory of replays for what the strong agents do differently |
 | `episodes/` | the match history, small enough to live in git |
 | `bot_ref.py` | frozen earlier agent, kept as a regression opponent |
 

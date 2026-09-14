@@ -124,3 +124,68 @@ is a misleading objective.** Territory routing and a bigger early crew both
 raised our own money while losing more games. Only the win rate counts, and
 `tools/eval.py` now prints it with a confidence interval and refuses to call
 anything on 24 games that a coin flip could produce.
+
+## Strategies tested and rejected
+
+Twelve structurally different strategies, each measured on win rate against the
+sitting agent over 40+ paired games. Two survived. The rejections are recorded
+because they are the useful part — they say where the agent is *not* losing.
+
+| change | result |
+|---|---|
+| fertilize by per-crop value, not a price gate | **51W-29L over 80** ✓ |
+| drop the final-day wheat reserve | **22W-8L (73% ± 16%)** ✓ |
+| filler upkeep work for idle units | 18W-22L over 40 — neutral |
+| territory routing (anchors on task clusters) | 6/24 vs 14/24 baseline |
+| quadrant zoning (each hand keeps to one 5×5) | 9/40, then 1/40, then 0/40 |
+| season-long tile dynamic program | worse on every seed tried |
+| favour crops whose planting window is closing | 0/40 at every strength |
+| more livestock (`ANIMAL_MIN_PROFIT` 200, `BAR` 0.6) | −$9,577, 14/40 |
+| more hands early (`MIN_HANDS` 12) | 3/24 mirror, 9/20 vs another agent |
+| ignore the opponent's farm (`OPP_DISCOUNT` 0) | −$12,917, 3/40 |
+| price actions or tile-days higher | −$19k and −$18k |
+| buy land earlier | −$1,802, 12/40 |
+
+### What the rejections mean
+
+**Walking is not waste.** Three separate attempts to keep hands near their work
+all lost, monotonically harder the more they bound. Over half of unit-turns are
+spent moving because the greedy correctly walks three tiles to a $300 job rather
+than doing a $50 one underfoot. Constraining it forces the cheap job.
+
+**Unserved demand is not recoverable revenue.** `tools/audit.py` reports that we
+capture ~38% of what the market would pay, with $104k of strawberry and $56k of
+wool apparently going begging. Both are illusions of the same kind: serving them
+needs tile-days and farm-hand turns that do not exist, and the supply would
+crash the price it is valued at. Pushing on either — via livestock or via a
+closing-window bias — lost decisively. Read that number as a ceiling on a
+different farm, not as money left on this one's table.
+
+**Opponent-awareness earns its keep.** Reading the other farm and pricing our
+plans against their visible pipeline is worth ~$13k a game; both ignoring them
+and over-weighting them are worse than the current 0.7 discount.
+
+The agent is at a genuine local optimum on every dial that exists. Further gains
+need a different architecture, not a better setting.
+
+## Scouting the public notebooks
+
+Nothing substantive is readable from a sandbox: every Kaggle notebook, dataset
+and discussion page is a JavaScript shell to an unauthenticated fetcher, and the
+API returns 401 without a token. Five public Kaggriculture notebooks exist by
+title — *Getting Started* (bovard), *Adaptive Replay Agent* and *Adaptive Farm
+Intelligence* (flexonafft), *Observable Economic Control* (pilkwang), and
+*Kaggriculture 101* — but their contents need a session to read. No competitor
+agent code is on GitHub either, which is what you would expect mid-competition.
+
+The one find that matters is a public dataset, **`georgymamarin/kaggriculture-episodes`**:
+full replays from across the ladder, not just our own games. Community notebooks
+describe mining it by plotting bank curves of top submissions, diffing actions
+between top and mid-ladder agents, and regressing final bank on early choices.
+
+That is worth more than any notebook write-up, because it answers the question
+this project has never been able to answer: *what do the agents rated 3000
+actually do?* Every strategy tested so far was measured against our own variants,
+which can only find our own bugs. `tools/profile_agents.py` reads that dataset
+directly — it groups replays by team, ranks by mean final bank, and reports each
+team's hiring rate, land purchases, peak farm composition and what they sell.
