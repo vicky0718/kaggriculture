@@ -155,10 +155,29 @@ overwrote the first one's overrides. Any `main:X vs main` run was really a
 mirror match with `X` discarded.
 
 Sweeps and runs against a separate opponent file (`bot_ref`, `starter`) were
-never affected — a different module is already a different namespace, so the
-table above stands. Same-file A/B runs are the ones to distrust; they are cheap
-to repeat now. A `MIN_HANDS=2` probe that returned 2W-2L under the old loader
-returns 1W-5L under the new one.
+never affected — a different module is already a different namespace. Same-file
+A/B runs are the ones to distrust, and the first version of this note was too
+generous in saying the table stood: three of the rejections were quoted as
+*mirror* matches, which is exactly the corrupted case.
+
+So they were re-run on 2026-09-17 under the fixed loader, 40 paired games each
+against `bot_ref`:
+
+| variant | mean bank | paired delta | wins |
+|---|---|---|---|
+| baseline | 66,723 | — | 21/40 |
+| `MIN_HANDS=12` | 66,748 | +25 +/- 4,356 | 16/40 |
+| `ANIMAL_MIN_PROFIT=200, ANIMAL_BAR=0.6` | 62,417 | -4,306 +/- 4,342 | 14/40 |
+| `OPP_DISCOUNT=0` | 55,470 | **-11,252 +/- 3,277** | 15/40 |
+
+Every verdict holds. Only `OPP_DISCOUNT=0` separates from noise on bank; the
+other two are directionally worse at 1.5 standard errors on win rate, which 40
+games cannot resolve. But both lose the argument that motivated them, because
+neither buys any bank either — the original `MIN_HANDS=12` claim of +$2,374 was
+itself a loader artefact and the honest figure is +$25.
+
+A `MIN_HANDS=2` probe that returned 2W-2L under the old loader returns 1W-5L
+under the new one.
 
 ### What the rejections mean
 
