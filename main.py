@@ -160,8 +160,6 @@ class P:
     PLANT_CUTOFF = 2              # no planting in the last N hours of the day
     LIQUIDATE_HOURS = 4           # final-day turns reserved for getting stock sold
     SEASON_COMMIT = 1             # price a tile over its whole season, not one cycle
-    ACTION_COST = 12.0            # opportunity cost of one farm-hand turn
-    TILE_DAY_VALUE = 40.0         # what one tile-day is worth, for cycle-length trades
 
     CASH_RESERVE_BASE = 450       # never invest the farm down to nothing
     CASH_RESERVE_PER_ANIMAL = 22
@@ -560,28 +558,14 @@ class Brain:
         return free_tiles - used > 0
 
     def _crop_cycle(self, crop):
-        """Whether to plan this crop fertilized, and its (units, days, actions).
-
-        The old test was a blanket "is fertilizer cheap today", which at day 0
-        ($100) planned every crop unfertilized -- valuing strawberry at 4 units
-        instead of 8, halving the crop with the deepest unserved demand on the
-        board. The question that actually matters is per crop: is the extra
-        yield worth more than the fertilizer it costs?"""
         stock = self.shed.get("FERTILIZER", 0) + self.carried.get("FERTILIZER", 0)
-        # Animals make one fertilizer a day each, free, so a long crop planted
-        # now will have plenty by the time its bonus window opens.
+        # Animals make a fertilizer a day each, so a long crop planted now will
+        # have plenty by the time its bonus window opens.
         future = self.n_animals + sum(self.pending_animals.values())
         have = stock > 2 or future >= P.FERT_ANIMALS or (
             P.FERT_OPTIMISM and self.day <= 6 and self.money > 900)
-        plain = CROP_CYCLE[crop]["plain"]
-        fert = CROP_CYCLE[crop]["fert"]
-        if not have:
-            return plain, False
-        n_fert = 2 if CROPS[crop]["ongoing"] else 1
-        gain = (fert[0] - plain[0]) * self.proj_price(crop, plain[0])
-        gain += (plain[1] - fert[1]) * P.TILE_DAY_VALUE      # a shorter cycle frees the tile
-        cost = n_fert * self.proj_price("FERTILIZER") + (fert[2] - plain[2]) * P.ACTION_COST
-        return (fert, True) if gain > cost else (plain, False)
+        use_fert = have and self.proj_price("FERTILIZER") < 78
+        return CROP_CYCLE[crop]["fert" if use_fert else "plain"], use_fert
 
     def _crop_score(self, crop, committed=0.0):
         """Coins per unit of scarce capacity for starting one cycle of `crop`,
