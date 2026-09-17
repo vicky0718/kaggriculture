@@ -2,3 +2,7 @@
 __pycache__/
 *.pyc
 replays/
+
+# Historical snapshots of the agent, used as loader-safe reference opponents.
+# Regenerate with: git show <commit>:main.py > v_pre_<name>.py
+v_pre_*.py
