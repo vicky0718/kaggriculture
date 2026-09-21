@@ -181,7 +181,8 @@ class P:
     ANIMAL_ACTIONS_PER_DAY = 3.4  # feed + care + harvest/collect amortised
     ANIMAL_BAR = 1.0              # livestock must also beat this x the best crop
     COMPOUND_DAYS = 12            # ...how long that early-cash preference lasts
-    COMPOUND_RATE = 0.0           # discount slow crops early; 0 = flat scoring
+    COMPOUND_RATE = 0.0           # tilt toward fast crops early; 0 = flat scoring
+    COMPOUND_REF = 6.0            # cycle length held neutral by that tilt
     SEED_BATCH = 6                # max seeds of one crop bought per turn
     FERT_ANIMALS = 3              # herd size that counts as a fertilizer supply
     FERT_OPTIMISM = 1             # assume early plantings will get fertilizer
@@ -599,7 +600,13 @@ class Brain:
         # buy seed, hands and animals that produce again -- five times over --
         # before the melon has paid once. Rate 0 restores the flat scoring.
         if P.COMPOUND_RATE and self.day <= P.COMPOUND_DAYS:
-            score /= 1.0 + P.COMPOUND_RATE * days
+            # Normalised about a reference cycle, so this tilts fast against
+            # slow without shrinking every score. A plain divide did the
+            # latter, and against the absolute CROP_MIN_SCORE floor it killed
+            # the cheap fast crops it was meant to favour -- planting halved
+            # and shifted further into melon.
+            score *= ((1.0 + P.COMPOUND_RATE * P.COMPOUND_REF)
+                      / (1.0 + P.COMPOUND_RATE * days))
         return score
 
     def _crop_sequence(self):
