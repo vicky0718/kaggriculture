@@ -2,3 +2,6 @@
 __pycache__/
 *.pyc
 replays/
+
+# Third-party Apache-2.0 agent used only as a local test opponent.
+john.py
