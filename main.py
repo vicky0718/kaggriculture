@@ -183,6 +183,7 @@ class P:
     COMPOUND_DAYS = 12            # ...how long that early-cash preference lasts
     COMPOUND_RATE = 0.0           # tilt toward fast crops early; 0 = flat scoring
     COMPOUND_REF = 6.0            # cycle length held neutral by that tilt
+    LATE_TRUNCATE = 1             # plant for an early harvest when time is short
     SEED_BATCH = 6                # max seeds of one crop bought per turn
     FERT_ANIMALS = 3              # herd size that counts as a fertilizer supply
     FERT_OPTIMISM = 1             # assume early plantings will get fertilizer
@@ -576,6 +577,28 @@ class Brain:
         use_fert = have and self.proj_price("FERTILIZER") < 78
         return CROP_CYCLE[crop]["fert" if use_fert else "plain"], use_fert
 
+    def _short_cycle(self, crop, units, days, acts):
+        """The same crop harvested early, when the full cycle no longer fits.
+
+        CROP_CYCLE prices a cycle played to max yield -- wheat five days,
+        carrot four -- but the field yields from `first_yield_day` onward for
+        fewer units. Refusing anything that cannot run to term retired wheat on
+        day 24 and carrot on day 25, and the agent then bought no seed at all
+        while holding $40k and seventy idle tiles.
+
+        Returns None when not even the first harvest fits.
+        """
+        if not P.LATE_TRUNCATE:
+            return None
+        budget = self.days_left - 1
+        cd = CROPS[crop]
+        if cd["ongoing"] or budget < cd["first_yield_day"]:
+            return None
+        # One unit at planting, one more per watered day up to the full cycle.
+        got = max(1, min(units, 1 + (budget - cd["first_yield_day"]) + 1))
+        share = float(budget) / float(days)
+        return got, budget, max(2, int(round(acts * share)))
+
     def _crop_score(self, crop, committed=0.0):
         """Coins per unit of scarce capacity for starting one cycle of `crop`,
         given `committed` units of that crop already planned this turn.
@@ -584,7 +607,11 @@ class Brain:
         tenth melon tile actually fetches once the first nine have sold."""
         (units, days, acts), use_fert = self._crop_cycle(crop)
         if days > self.days_left - 1:
-            return -1.0        # planted tomorrow it would not finish; don't stock it
+            fit = self._short_cycle(crop, units, days, acts)
+            if fit is None:
+                return -1.0    # planted tomorrow it would not finish; don't stock it
+            units, days, acts = fit
+            use_fert = False   # the fertilizer window cannot pay back in time
         revenue = self.marginal_revenue(crop, units, committed)
         if crop == "WHEAT" and self.n_animals:
             # Home-grown wheat displaces a purchase at the (rising) buy price,
