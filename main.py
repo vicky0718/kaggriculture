@@ -147,7 +147,7 @@ def animal_rate(animal):
 # --------------------------------------------------------------------------
 
 class P:
-    MIN_HANDS = 4
+    MIN_HANDS = 6                 # +3,945 +/- 1,884 vs a real ladder agent, 80 games
     MAX_HANDS = 13
     HIRE_CASH_FRAC = 0.06        # marginal hand allowed while fib(k) <= this * cash
     HIRE_CASH_FLOOR = 34          # ...but always allow cheap hands

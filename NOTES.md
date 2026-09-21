@@ -141,7 +141,7 @@ because they are the useful part — they say where the agent is *not* losing.
 | season-long tile dynamic program | worse on every seed tried |
 | favour crops whose planting window is closing | 0/40 at every strength |
 | more livestock (`ANIMAL_MIN_PROFIT` 200, `BAR` 0.6) | −$9,577, 14/40 |
-| more hands early (`MIN_HANDS` 12) | 3/24 mirror, 9/20 vs another agent |
+| more hands early (`MIN_HANDS` 12) | 3/24 mirror -- **overturned**, see below |
 | ignore the opponent's farm (`OPP_DISCOUNT` 0) | −$12,917, 3/40 |
 | price actions or tile-days higher | −$19k and −$18k |
 | buy land earlier | −$1,802, 12/40 |
@@ -223,6 +223,77 @@ Zero wins in forty. There is no "hire as many as the game allows" strategy: the
 game allows any number, and the curve prices them out. Note this leaves the
 *placement* question untouched — hands respawn on shed tiles every morning, so
 the opening walk of each day is still an unmeasured tax.
+
+## Measuring against a real opponent (2026-09-21)
+
+Every measurement before this date was taken against this agent's own
+variants or `bot_ref`, a snapshot of itself. That can only ever surface our
+own bugs, which is why ten of twelve strategy tests came back negative.
+
+A public competition notebook supplied a genuine ladder agent -- 6,815 lines,
+Apache-2.0, accreted by about eight authors, embedding an exact copy of the
+environment engine to simulate forward. Kept locally as `john.py`, gitignored.
+First honest measurement of where we stood:
+
+    main vs john, 28 real ladder seeds:  0W-28L,  $57,228 vs $136,744
+
+### What it does that we did not
+
+| | wheat | egg | fertilizer | wool | milk | strawberry |
+|---|---|---|---|---|---|---|
+| us | 79 | 0 | 20 | 0 | 85 | 121 |
+| them | 471 | 160 | 363 | 142 | 213 | 268 |
+
+It holds ~90 developed tiles from day 12 to the whistle and finishes with 17
+animals; we peaked at 68 tiles and finished with 3. Its market model is a
+byte-exact copy of the environment's, so our pricing was never the problem.
+
+### Two inviting hypotheses, both killed
+
+**Plant wheat like they do.** Their opening buys 32 wheat seeds in ten days
+and stands at $2,302 on day 6 where we stand at $29; over a season they plant
+163 wheat to our 31. Adding a time preference to `_crop_score` to favour fast
+crops lost at every strength: -$6,227 to -$19,727 a game. Their wheat is a
+*consequence* of throughput they have and we do not, not the cause of it.
+
+The first version of that test was worse than wrong -- it divided every score
+by cycle length, which shrank the whole scale and halved total planting, 117
+seeds to 64, shifting the mix further into melon. A uniform shrink is not a
+time preference. The normalised version, which genuinely tilts fast against
+slow, still loses.
+
+**Buy more livestock.** -$4,517 a game, even though they finish with 17
+animals to our 3. They can run a herd because they have the tiles, feed and
+hands for it. Buying animals without that is buying the symptom.
+
+### What actually held
+
+| change | measured against `john` |
+|---|---|
+| revert the per-crop fertilizer rule | 39/40 vs 21/40 on three independent opponents |
+| `LATE_TRUNCATE` -- plant for an early harvest | **+$793 +/- 171** (4.6 SE) |
+| `MIN_HANDS` 4 -> 6 | **+$3,945 +/- 1,884** (2.1 SE, two disjoint seed blocks) |
+
+`CROP_CYCLE` prices each crop at its full cycle -- wheat five days, carrot
+four -- and `_crop_score` refused anything that could not run to term. The
+field yields from `first_yield_day`, which is 2 for both, so the rule retired
+wheat on day 24 and carrot on day 25. After that the agent bought no seed at
+all: the last week of every season was spent holding $21k-$40k in cash beside
+39 to 71 idle tiles.
+
+Tiles were never the only constraint, which is why truncation alone is worth
+only $793 -- planting, watering and harvesting all cost hand-turns. Unlocking
+the land without the labour buys a fraction. The two changes compound.
+
+### A caution about pooling
+
+Three sweeps agreed that `MIN_HANDS=8` was worth about +$5,700, and all three
+had been run with `--seed0 1` on overlapping seeds. Pooling them would have
+produced +$5,683 +/- 2,686 and a false significance. Re-run on a disjoint
+block (`--seed0 5000`) the effect was +$3,430: real, and smaller. Only then
+can the blocks be combined. Crew 6 and 8 are statistically indistinguishable;
+6 is adopted as the cheaper side of a plateau that falls off by 10, where the
+nightly re-hire curve starts to bite.
 
 ### What the rejections mean
 
