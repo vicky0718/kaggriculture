@@ -133,7 +133,7 @@ because they are the useful part — they say where the agent is *not* losing.
 
 | change | result |
 |---|---|
-| fertilize by per-crop value, not a price gate | **51W-29L over 80** ✓ |
+| fertilize by per-crop value, not a price gate | **REVERTED** — see below |
 | drop the final-day wheat reserve | **22W-8L (73% ± 16%)** ✓ |
 | filler upkeep work for idle units | 18W-22L over 40 — neutral |
 | territory routing (anchors on task clusters) | 6/24 vs 14/24 baseline |
@@ -145,6 +145,84 @@ because they are the useful part — they say where the agent is *not* losing.
 | ignore the opponent's farm (`OPP_DISCOUNT` 0) | −$12,917, 3/40 |
 | price actions or tile-days higher | −$19k and −$18k |
 | buy land earlier | −$1,802, 12/40 |
+
+### A caveat on the harness (fixed 2026-09-14)
+
+Until `870c088`, `tools/eval.py` loaded both agents with `importlib.reload()`,
+which re-executes a module into its *existing* `__dict__`. Two agents from the
+same file therefore shared one `P` class, and whichever loaded second silently
+overwrote the first one's overrides. Any `main:X vs main` run was really a
+mirror match with `X` discarded.
+
+Sweeps and runs against a separate opponent file (`bot_ref`, `starter`) were
+never affected — a different module is already a different namespace. Same-file
+A/B runs are the ones to distrust, and the first version of this note was too
+generous in saying the table stood: three of the rejections were quoted as
+*mirror* matches, which is exactly the corrupted case.
+
+So they were re-run on 2026-09-17 under the fixed loader, 40 paired games each
+against `bot_ref`:
+
+| variant | mean bank | paired delta | wins |
+|---|---|---|---|
+| baseline | 66,723 | — | 21/40 |
+| `MIN_HANDS=12` | 66,748 | +25 +/- 4,356 | 16/40 |
+| `ANIMAL_MIN_PROFIT=200, ANIMAL_BAR=0.6` | 62,417 | -4,306 +/- 4,342 | 14/40 |
+| `OPP_DISCOUNT=0` | 55,470 | **-11,252 +/- 3,277** | 15/40 |
+
+Every verdict holds. Only `OPP_DISCOUNT=0` separates from noise on bank; the
+other two are directionally worse at 1.5 standard errors on win rate, which 40
+games cannot resolve. But both lose the argument that motivated them, because
+neither buys any bank either — the original `MIN_HANDS=12` claim of +$2,374 was
+itself a loader artefact and the honest figure is +$25.
+
+A `MIN_HANDS=2` probe that returned 2W-2L under the old loader returns 1W-5L
+under the new one.
+
+### The fertilizer change was a regression (reverted 2026-09-17)
+
+`f8abb39` was adopted on a "51W-29L over 80 games" same-file A/B — exactly the
+shape the loader bug corrupted. Measured against three *independent* opponents,
+40 paired games each, it costs about half the win rate:
+
+| opponent | `v_pre_fert` (`f82abd5`) | `main` (`f8abb39`) |
+|---|---|---|
+| `bot_ref` | **39/40** | 21/40 |
+| `starter` | 116,347 mean | 110,405 mean (**-5,942 +/- 2,858**) |
+| `v_pre_all` | **30/40** | 21/40 |
+| head to head | 14 | 26 |
+
+Only the head-to-head favours `f8abb39`, and that is the one test shape already
+known to be unreliable here. Three independent opponents outweigh one sibling,
+so `main.py` is reverted to `f82abd5`.
+
+The likely mechanism: valuing fertilizer per crop makes the agent fertilize
+*more*, which shortens cycles and raises yield — and dumping that extra yield
+into `sq`-curve products (melon, wool, milk, strawberry) crashes the very price
+the extra units were valued at. It optimises production against a price model
+that assumes its own output away.
+
+### Crew size is walled off by the hire curve (tested 2026-09-17)
+
+Hands are dismissed every night (`farm["hands"] = []` in `_end_of_day`) and
+re-hired each morning at `fib(k)` for the k-th hire of that day, so a crew of n
+costs `fib(n+1) - 1` *per day*: $143 at 10, $609 at 13, $2,583 at 16. Against
+banks of ~$66k, a crew of 16 costs more than the game is worth.
+
+Measured against `bot_ref`, 40 paired games each, raising both the floor and the
+ceiling together (the earlier `MIN_HANDS=12` probe only raised the floor under a
+ceiling of 13, so it barely bound):
+
+| crew | wins | paired delta |
+|---|---|---|
+| baseline (`MAX_HANDS` 13) | 21/40 | — |
+| `MIN_HANDS` 13, `MAX_HANDS` 14 | 14/40 | -2,049 +/- 3,858 |
+| `MIN_HANDS` 15, `MAX_HANDS` 16 | **0/40** | **-19,768 +/- 3,777** |
+
+Zero wins in forty. There is no "hire as many as the game allows" strategy: the
+game allows any number, and the curve prices them out. Note this leaves the
+*placement* question untouched — hands respawn on shed tiles every morning, so
+the opening walk of each day is still an unmeasured tax.
 
 ### What the rejections mean
 

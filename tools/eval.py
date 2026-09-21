@@ -1,5 +1,5 @@
 """Parallel multi-seed evaluation."""
-import sys, os, time, argparse, importlib, statistics
+import sys, os, time, argparse, importlib, importlib.util, statistics
 from concurrent.futures import ProcessPoolExecutor
 sys.path.insert(0, "/home/user/kaggriculture/.venv/lib/python3.11/site-packages")
 sys.path.insert(0, "/home/user/kaggriculture")
@@ -12,9 +12,15 @@ def _one(job):
         """'main' or 'main:WHEAT_CARRY=12,MIN_HANDS=8' (parameter overrides)."""
         if n in ("random", "pass", "starter"):
             return n
-        mod, _, spec = n.partition(":")
-        m = importlib.import_module(mod); importlib.reload(m)
-        for kv in filter(None, spec.split(",")):
+        mod, _, overrides = n.partition(":")
+        # Each agent needs its OWN module object. importlib.reload() re-executes
+        # into the *shared* module dict, so loading a second agent from the same
+        # file silently wiped the first one's overrides and quietly turned every
+        # 'main:X vs main' A/B test into a mirror match.
+        src = importlib.util.find_spec(mod)
+        m = importlib.util.module_from_spec(src)
+        src.loader.exec_module(m)
+        for kv in filter(None, overrides.split(",")):
             k, _, v = kv.partition("=")
             cur = getattr(m.P, k)
             setattr(m.P, k, type(cur)(float(v)) if isinstance(cur, (int, float)) else v)
