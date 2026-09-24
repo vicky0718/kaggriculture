@@ -9,3 +9,4 @@ v_pre_*.py
 
 # Third-party Apache-2.0 agent used only as a local test opponent.
 john.py
+john_*.py
